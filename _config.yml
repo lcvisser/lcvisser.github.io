@@ -1,0 +1,14 @@
+title: Ludo's page
+description: >-
+  Various experiments and solutions that I find interesting to share and are
+  hopefully interesting or useful to others.
+baseurl: ""
+url: "https://lcvisser.github.io"
+github_username: lcvisser
+
+# Build settings
+theme: minima
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
