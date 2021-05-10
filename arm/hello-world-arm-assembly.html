@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>"Hello, world" in ARM assembly</title>
+    </head>
+    <body>
+        <h1>"Hello, world" in ARM assembly</h1>
+
+        <p>The mandatory example to try when learning any new language is a "Hello, world" program. Here's one in ARM
+        assembly. You can find a similar one for C <a
+        href="https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/">here</a>, including
+        some useful informat on compiling and linking that I've also used here.</p>
+
+        <p>ARM assembly is not difficult to learn, because the instruction set is limited: ARM stands for Advanced RISC
+        Machine, where RISC stands for Reduced Instruction Set Computer. You can find the reference manual <a
+        href="https://developer.arm.com/documentation/dui0068/b/ARM-Instruction-Reference">here</a>, and while the PDF
+        is 350+ pages, chapter 4 is the interesting bit (for now at least) and that is less than a 100 pages. There are
+        plenty of tutorials, quick references and cheat sheets to be found online, such as <a
+        href="https://azeria-labs.com/writing-arm-assembly-part-1/">this one from Azeria Labs</a>.</p>
+
+        <p>The typical example would be to write the prototypical program for execution in user-space on a operating
+        system, i.e.  like a regular program. There is a good example on how to do that <a
+        href="https://jumpnowtek.com/shellcode/linux-arm-shellcode-part1.html)">here</a>. I'm more interested to do it
+        on a bare-metal system. However, since I don't have an ARM-based board readily available, I'll use <a
+        href="https://www.qemu.org">QEMU</a> to emulate one. I'll use the <a
+        href="https://qemu-project.gitlab.io/qemu/system/arm/virt.html">generic "virt" board</a>that has a single UART.
+        You can actually also use QEMU to emulate an ARM processor in user space (qemu-arm).</p>
+
+        <h2>Basic program structure</h2>
+
+        <p>The basic structure of source file will include the <i>.text</i> and <i>.data</i> sections:</p>
+
+        <pre>
+        .global _start
+
+        .text
+
+        _start:
+
+        halt:
+            b halt
+
+        .data
+
+        message:
+            .asciz "Hello, world!\n"
+
+        .end
+        </pre>
+
+        <p>This program will start at the "_start" label. The first instruction is <i>b halt</i>, which means to branch
+        to the location labelled with "halt". Since this is an unconditional jump, this is an endless loop that we will
+        use to end execution.</p>
+
+        <p>The data section contains the null-terminated string that we are going to print (the ".asciz" annotation
+        results in a <i>\0</i> added automatically at compile time).</p>
+
+        <h2>Printing the message</h2>
+
+        <p>Basically, the idea is to do an equivalent of:</p>
+
+        <pre>
+        for (i = 0; i &lt; length_of_message; i++) {
+            print(message[i])
+        }
+        </pre>
+
+        <p>Hence, for our "Hello, world" program, we need three things:</p>
+
+        <ol>
+            <li>an address to write to, so we can see our message;</li>
+            <li>the start address of our message;</li>
+            <li>a loop counter to iterate over the message, one character at the time.</li>
+        </ol>
+
+        <p>As said, this program is going to run on an embedded board, bare metal. No screen or terminals available for
+        a "stdout" to print to. Instead, we need to output via the UART. The base address of the UART of the "virt"
+        board can be found at 0x9000000. The <a
+        href="https://developer.arm.com/documentation/ddi0183/g/programmers-model/summary-of-registers">datasheet</a>)
+        tells that the data register is immediately at the base address, so that is the address we need to write to.
+        We'll use register <i>r0</i> for that. We'll use <i>r1</i> to store the start address of our message and
+        <i>r2</i> for the loop counter:</p>
+
+        <pre>
+        ldr r0, =uart_base  /* data register is at the uart base address */
+        ldr r1, =message    /* pointer to first character */
+        ldr r2, =#0         /* loop counter */
+        </pre>
+
+        <p>We will use <i>r3</i> as an intermediate register. Then the loop is set up as follows:</p>
+
+        <ol>
+            <li>load the value at <i>message_address + loop_counter</i> (1 byte) in <i>r3</i>;</li>
+            <li>compare the value in <i>r3</i> to zero;</li>
+            <li>if <i>r3 == 0</i>, exit the loop; otherwise push the value in <i>r3</i> to the data register of the
+            UART;</li>
+            <li>increment the loop counter;</li>
+            <li>go to step (1).</li>
+        </ol>
+
+        <pre>
+        loop:
+            ldrb r3, [r1, r2]   /* load byte from address r1 + offset r2 in r3 */
+            cmp r3, #0          /* check for end of string */
+            beq halt            /* stop when finished */
+            str r3, [r0]        /* else, write byte from r3 to uart data register */
+            add r2, r2, #1      /* increment counter */
+            b loop              /* loop */
+        </pre>
+
+        <p>That's it. Here is the entire program:</p>
+
+        <pre>
+        .global _start
+
+        .text
+
+        .set uart_base, 0x09000000
+
+        _start:
+            ldr r0, =uart_base  /* data register is at the uart base address */
+            ldr r1, =message    /* pointer to first character */
+            ldr r2, =#0         /* loop counter */
+
+        loop:
+            ldrb r3, [r1, r2]   /* load byte from address r1 + offset r2 in r3 */
+            cmp r3, #0          /* check for end of string */
+            beq halt            /* stop when finished */
+            str r3, [r0]        /* else, write byte from r3 to uart data register */
+            add r2, r2, #1      /* increment counter */
+            b loop              /* loop */
+
+        halt:
+            b halt
+
+        .data
+
+        message:
+            .asciz "Hello, world!\n"
+
+        .end
+        </pre>
+
+        <p>If this was a real ARM board, we would have to add some code to actually initialize the UART, set the
+        baudrate, etc.  However, the "virt" board doesn't seem to really care about that: you can just write to the
+        data register and it will be printed to "stdout" of your host operating system.</p>
+
+        <h2>Compiling and running</h2>
+
+        <p>To compile, you need the appropriate cross-compiler toolchain. We have a "bare-metal" target and ARM <a
+        href="https://en.wikipedia.org/wiki/Application_binary_interface">embedded application binary interface
+        (EABI)</a>. ARM provides a GCC-based toolchain on their <a
+        href="https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm/downloads">website</a>,
+        which is what I will be using here, but there are other options.</p>
+
+        <pre>
+        arm-none-eabi-as -o hello.o hello.s
+        arm-none-eabi-ld -Ttext=0x0 -o hello.elf hello.o
+        arm-none-eabi-objcopy -O binary hello.elf hello.bin
+        </pre>
+
+        <p>First the assembler is invoked to compile the source into an object file. Then we use the linker to make an
+        executable (<a href="https://en.wikipedia.org/wiki/Executable_and_Linkable_Format">Executable and Linkable
+        Format (ELF)</a>), linking the text section at 0x0. Finally, because we do not have an operating system, we
+        convert the executable into a raw binary.</p>
+
+        <p>Ideally, this should be enough, but there is a caveat: how to tell the board to start executing our binary?
+        If you read through the help for <a
+        href="https://qemu-project.gitlab.io/qemu/system/invocation.html">invocation of QEMU</a>, you find that the use
+        cases are geared towards booting kernel images. There is however an option to specify a ROM image, which is not
+        really clear from the documenation. <a
+        href="https://stackoverflow.com/questions/57461025/how-to-add-sd-flash-to-qemu-virt-machine">This post</a> by
+        <a href="https://translatedcode.wordpress.com/about/">Peter Maydell</a>" (one of the developers for QEMU) was
+        very helpful: you can provide a flash ROM image via the "-drive" flag:</p>
+
+        <pre>
+        -drive if=pflash,format=raw,file=flash.img
+        </pre>
+
+        <p>The "virt" board expects a 64MB image:</p>
+
+        <pre>
+        $ qemu-system-arm -machine virt -m 128M -nographic -drive if=pflash,format=raw,file=hello.bin
+        qemu-system-arm: device requires 67108864 bytes, block backend provides 66048 bytes
+        </pre>
+
+        <p>We can easily make an image of the appropriate size:</p>
+
+        <pre>
+        dd if=/dev/zero of=flash.img bs=1m count=64
+        dd if=hello.bin of=flash.img conv=notrunc
+        </pre>
+
+        <p>The first command makes an image file of exactly 64 MB, filled with zeros. The second command puts our
+        binary at the beginning of that image. Now run it (press <b>Ctrl-a, x</b> to terminate):</p>
+
+        <pre>
+        $ qemu-system-arm -machine virt -m 128M -nographic -drive if=pflash,format=raw,file=flash.img
+        Hello, world!
+        </pre>
+
+        <p><a href="https://gist.github.com/lcvisser/142be2a62ee1052673287fd26a9eca99">Here</a> is a simple Makefile to
+        tie it all together.</p>
+
+        <hr>
+
+        <p><a href="../index.html">Home</a> | <i>Last update: 2021-05-23</i></p>
+    </body>
+</html>

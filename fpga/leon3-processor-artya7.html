@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>LEON3 processor on a Digilent Arty-A7</title>
+    </head>
+    <body>
+        <h1>LEON3 processor on a Digilent Arty-A7</h1>
+
+        <p>The LEON3 processor is a space-grade processor. Its VHDL sources are open source, which means you can have
+        your own space-grade processor running on a FPGA board, at home. The LEON processor is a 32-bit CPU fully
+        compatible with the SPARC-V8 instruction set from Sun Microsystems.  What makes this processor interesting (for
+        me at least), is that it is designed by the European Space Agency (ESA) for use in space missions. While
+        development is currently no longer done by ESA themselves, the LEON processors are still <a
+        href="http://www.esa.int/Enabling_Support/Space_Engineering_Technology/Onboard_Computers_and_Data_Handling/Microprocessors">used
+        in ESA missions</a>. The latest version is the LEON5. <a
+        href="https://en.wikipedia.org/wiki/LEON">Wikipedia</a> has much more information for further reading.</p>
+
+        <p>The LEON processors and supporting software are currently developed by <a
+        href="https://www.gaisler.com">Cobham Gaisler</a>, but the VHDL sources, build tools and software libraries are
+        available under a GPL license, I guess as a result of ESA funding much of their development with public money.
+        This means that you can have your own spacecraft processor at home! Well, a softcore version of one at
+        least.</p>
+
+        <p>While the latest version of the LEON processor series is the LEON5, I choose the LEON3. It can be configured
+        to fit on fairly small (read: cheap) FPGAs and because it has been around for about 20 years already, there is
+        a lot of documentation and tools available for it.</p>
+
+        <h2>Choosing an FPGA board</h2>
+
+        <p>GRLIB, which contains the VHDL sources and supporting scripts for the LEON processors and IP cores, can be
+        downloaded from Gaisler's <a href="https://www.gaisler.com/index.php/downloads/leongrlib">download page</a>. On
+        that page, you'll find an Excel sheet that provdes some estimates on the required FPGA sizing (number of LUTs,
+        RAM, etc.) for a number of configuration options. You can use this to choose an FPGA board, but easier is to
+        download the library and look under the <i>designs</i> directory. In there you'll find all the FPGA boards that
+        are supported "out of the box" by GRLIB, in the sense that they provide a CPU configuration that will fit in
+        that particular FPGA. They also provide the required constraint files and other parameters that are needed to
+        get something useful running on that board.</p>
+
+        <p>Gaisler supports some boards with pre-built bitstreams and a bit more documentation. These are an order of
+        magnitude more expensive. Gaisler also sells evaluation boards for their own (radiation-hardened)
+        processors.</p>
+
+        <p>From the boards supported by GRLIB, I choose the <a
+        href="https://reference.digilentinc.com/programmable-logic/arty-a7/start">Digilent Arty-A7 35T</a>, mostly
+        because it is cheap, yet sufficient for some first steps with the LEON3.</p>
+
+        <h2>Preparation</h2>
+
+        <p>The following was tried on CentOS 8, but should translate to any Linux distribution.</p>
+
+        <h3>General requirements</h3>
+
+        <p>Install <i>libusb libftdi libXtst tcl tk ncurses</i> via your preferred way (package manager or whatever
+        your prefer). GRLIB expects <i>libncurses.so.5</i> and <i>libform.so.5</i>, but you can symlink to
+        <i>*.so.6</i>. You'll also need the usual developer tools, like make, autoconf, etc.; on CentOS I just did a
+        groupinstall of "Development Tools".</p>
+
+        <h3>Digilent Adept runtime and utilities</h3>
+
+        <p>Install the <a href="https://reference.digilentinc.com/reference/software/adept/start">Digilent Adept
+        runtime and utilities</a>. Both come with an install script that must be run as root user. After installation,
+        plug in the board and run:</p>
+
+        <pre>
+        $ dadutil enum
+        Found 1 device(s)
+
+        Device: Arty
+            Device Transport Type: 00020001 (USB)
+            Product Name:          Digilent Arty A7-35T
+            User Name:             Arty
+            Serial Number:         210319B0C2D8
+        </pre>
+
+        <p>If this utility doesn't show your board, fix that first. If you are running in a virtual machine, make
+        sure to have USB3 enabled (xHCI). Also make sure that your user has rights to access serial devices; on
+        CentOS you need to be added to the `dialout` group.</p>
+
+        <p>Also check that <i>libftd2xx</i> is installed. Digilent Adept (and Xilinx Vivado as well) requires it, but
+        this library is closed source and therefore not available via package managers. Digilent ships a version of
+        this library inside the runtime archive (in subfolder ftdi.drivers-&lt;version&gt;), or you can download the
+        newest version from FTDI. Unfortunately, the Adept 2 runtime installation does not install this library
+        automatically, nor does it ask you to do so. Hence, it is easy to end up with an incomplete installation. <a
+        href="https://forum.digilentinc.com/topic/20277-devices-cannot-be-found-with-digilent-utilities/?do=findComment&comment=57708">This
+        forum post</a> provides a way to check if your installation is complete: use <i>ldconfig</i> to see what
+        libraries are known. The output should look like this:
+
+        <pre>
+        $ /sbin/ldconfig -p | grep ftd2xx
+            libftd2xx.so (libc6,x86-64) => /usr/lib64/libftd2xx.so
+            libdftd2xx.so.1 (libc6,x86-64) => /usr/lib64/digilent/adept/libdftd2xx.so.1
+            libdftd2xx.so (libc6,x86-64) => /usr/lib64/digilent/adept/libdftd2xx.so
+        </pre>
+
+        <p>If <i>libftd2xx</i> is not installed the first line will be missing; the libraries in the digilent folder
+        are not complete implementations, as is explained in the linked forum post.</p>
+
+        <h3>Vivado</h3>
+
+        <p>You'll need something to generate a bitstream and program the FPGA. A full list of supported software can be
+        found in the <a href="https://www.gaisler.com/products/grlib/grlib.pdf">GRLIB User Manual</a>. I only have some
+        limited experience with Xilinx Vivado, and fortunately the Arty-A7 is <a
+        href="https://www.xilinx.com/products/design-tools/vivado/vivado-webpack.html#architecture">fully supported by
+        the free WebPACK edition</a>. I used version 2020.2 for writing this.</p>
+
+        <p>Before running the installer, set the <i>LC_ALL</i> and <i>LANG</i> environment variables (put this also in
+        .bashrc or similar, becaue not setting these correctly results in strange errors):</p>
+
+        <pre>
+        $ export LC_ALL=C.UTF-8
+        $ export LANG=C.UTF-8
+        </pre>
+
+        <p>On CentOS 8 I had to create symlink <i>libtinfo.so.5</i>, since CentOS came with a newer
+        <i>libtinfo.so.6</i>.</p>
+
+        <p>You'll need an account to download and install Vivado. Xilinx provides only a <a
+        href="https://www.xilinx.com/support/download.html">single generic installer</a>, and the installer will prompt
+        you for your account details in order to verify that you have a license for what you want to install. Hence,
+        make sure to only install the WebPACK components. In order to save space, select only Artix-7 support.</p>
+
+        <p>You can install Vivado in any location. You don't need root access to run the main installer, but I'd
+        recommend to install it in a location that is read-only for normal users, to avoid accidentally breaking
+        things. Vivado comes with a small bash script to set environment variables (such as adding <i>vivado</i> to
+        your PATH); you need to source it:</p>
+
+        <pre>
+        $ . /path/to/Vivado/2020.2/settings64.sh"
+        </pre>
+
+        <p>After finishing the main installer, you need to also install the Xilinx cable drivers. This must be done as
+        root (<i>sudo</i> will not work!):</p>
+
+        <pre>
+        $ sudo su
+        # /path/to/Vivado/2020.2/data/xicom/cable_drivers/lin64/install_script/install_drivers/install_drivers
+        </pre>
+
+        <h3>GRLIB and GRMON</h3>
+
+        <p>You can download GRLIB from Gaisler's <a
+        href="https://www.gaisler.com/index.php/downloads/leongrlib">download page</a>. It is a single compressed
+        archive that you only need to extract somewhere. I recommend putting it in a read-only location.</p>
+
+        <p>You will also need GRMON, their debug tool. It too can be downloaded <a
+        href="https://www.gaisler.com/index.php/downloads/debug-tools">from this page</a>. It is free for personal use.
+        Extract the archive and add the <i>bin64</i> and <i>lib64</i> paths to your PATH and LD_LIBRARY_PATH
+        variables.</p>
+
+        <h2>Building the LEON3 example design</h2>
+
+        <p>GRLIB comes with a designs for a large number of boards. They reside in the "designs" directory. To get
+        started, copy the entire <i>leon3-digilent-arty-a7</i> directory to a workspace directory (careful: there is an
+        identically named directory under "boards"!). In the top-level Makefile, modify the GRLIB variable to point to
+        the root of the extracted GRLIB archive and then run:</p>
+
+        <pre>
+        $ make scripts
+        </pre>
+
+        <p>This will create a number of files and directories with support files for various toolchains, including
+        Vivado. Open the file <i>vivado/leon3mp_vivado.tcl</i> with a text editor and find the line:</p>
+
+        <pre>
+        #upgrade_up [getips mig]
+        </pre>
+
+        <p>It should be near the end of the file. Uncomment it by removing the #. "MIG" refers to Memory Interface
+        Generator and is a Xilinx IP core. You need to build it only once, so after the first run you can comment the
+        line in the TCL script out again. Now, start the build and synthesis process:</p>
+
+        <pre>
+        $ make vivado
+        </pre>
+
+        <p>This takes about 15 minutes on a reasonably up to date machine. Alternatively, run:</p>
+
+        <pre>
+        $ make vivado-launch
+        </pre>
+
+        <p>for an interactive session (in that case, do <b>not</b> uncomment the line in the TCL script, as it will
+        immediately try to build the MIG core on startup; instead, do the build from the context menu (look for
+        "Upgrade IP...").</p>
+
+        <p>Note: Vivado requires 3.5 GB of RAM with the Arty-A7, more than the 3 GB that Xilinx <a
+        href="https://www.xilinx.com/products/design-tools/vivado/memory.html">reports</a>. My headless CentOS virtual
+        machine needs 5 GB of RAM to synthesize the default design. If you run from the Vivado GUI, you'll need more.
+        </p>
+
+        <h2>Flashing the bitstream</h2>
+
+        <p>When the build is complete, you can flash it to the board. You have to options:</p>
+
+        <ol>
+            <li>Program the FPGA core only; the bitstream is not stored in ROM and thus "gone" after a power cycle.</li>
+            <li>Put the bitstream in ROM; the bitstream is automatically loaded into the core when power is turned on.</li>
+        </ol>
+
+        <p>For the first option, make sure that the MODE jumper (JP1) on the board is <b>open</b> and execute:</p>
+
+        <pre>
+        $ make vivprog
+        </pre>
+
+        <p>For the second option, make sure that the MODE jumper (JP1) on the board is <b>closed</b> and execute:</p>
+
+        <pre>
+        $ make vivrom
+        </pre>
+
+        <p> After a few minutes, the LED labeled DONE will light up. Press the RESET button to start the LEON3 core.
+        LED 4, 5 and 7 should light up. Now, use GRMON to connect to the core (the <i>-freq</i> flag is should not be
+        necessary, but sometimes GRMON detects the frequency incorrectly):</p>
+
+        <pre>
+        $ grmon -digilent -freq 83
+          GRMON debug monitor v3.2.11.1 64-bit eval version
+
+          Copyright (C) 2021 Cobham Gaisler - All rights reserved.
+          For latest updates, go to http://www.gaisler.com/
+          Comments or bug-reports to support@gaisler.com
+
+          This eval version will expire on 20/07/2021
+
+        JTAG chain (1): xc7a35t
+          GRLIB build version: 4261
+          Detected frequency:  83.0 MHz
+
+          Component                            Vendor
+          LEON3 SPARC V8 Processor             Cobham Gaisler
+          JTAG Debug Link                      Cobham Gaisler
+          GR Ethernet MAC                      Cobham Gaisler
+          SPI Memory Controller                Cobham Gaisler
+          AHB/APB Bridge                       Cobham Gaisler
+          LEON3 Debug Support Unit             Cobham Gaisler
+          Xilinx MIG Controller                Cobham Gaisler
+          Generic UART                         Cobham Gaisler
+          Multi-processor Interrupt Ctrl.      Cobham Gaisler
+          Modular Timer Unit                   Cobham Gaisler
+          AMBA Wrapper for OC I2C-master       Cobham Gaisler
+          SPI Controller                       Cobham Gaisler
+          General Purpose I/O port             Cobham Gaisler
+          General Purpose I/O port             Cobham Gaisler
+          General Purpose I/O port             Cobham Gaisler
+
+          Use command 'info sys' to print a detailed report of attached cores
+
+        grmon3>
+        </pre>
+
+        <h2>Compiler toolchain</h2>
+
+        <p>To compile software for the LEON3, you need the <a
+        href="https://www.gaisler.com/index.php/products/operating-systems/bcc">LEON Bare-C Cross Compilation System
+        (BCC)</a>, which is provided by Gaisler for free. It is based on GCC, so it easy to work with if you are used
+        to those tools. BCC can be downloaded from <a
+        href="https://www.gaisler.com/index.php/downloads/compilers?task=view&id=161">here</a>. Make sure to download
+        BCC 2.x.</p>
+
+        <p>Installing BCC2 is easy: as explained in the user manual, just extract it somewhere and add the folder with
+        executables to you PATH environment variable, and the folder with manual pages to the MANPATH environment
+        variable.</p>
+
+        <h2>Hello, world</h2>
+
+        <p>In the BCC2 archive there is an directory with examples. In it is a README file, a Makefile, and a number of
+        directories with various examples worked out. The folder <i>hello</i> contains the essential "hello, world"
+        example, implemented in a single file hello.c:</p>
+
+        <pre>
+        #include &lt;stdlib.h$gt;
+        #include &lt;stdio.h$gt;
+
+        int main(void)
+        {
+                printf("hello, world\n");
+
+                return EXIT_SUCCESS;
+        }
+        </pre>
+
+        <p>From the root of the examples directory (i.e., where the Makefile is), execute:</p>
+
+        <pre>
+        $ make CFLAGS="-mcpu=leon3 -msoft-float" hello.elf
+        </pre>
+
+        <p>This will produce the executable <i>hello.elf</i>. With the board connected, start GRMON in UART debug
+        mode:</p>
+
+        <pre>
+        $ grmon -digilent -u
+        </pre>
+
+        <p>Reset the processor and load the binary that was just compiled:</p>
+
+        <pre>
+        $ grmon -digilent -u
+        grmon3> reset
+        grmon3> load hello.elf
+                  40000000 .text             23.0kB /  23.0kB   [===============>] 100%
+                  40005C00 .rodata            128B              [===============>] 100%
+                  40005C80 .data              1.2kB /   1.2kB   [===============>] 100%
+          Total size: 24.28kB (19.45kbit/s)
+          Entry point 0x40000000
+          Image /path/to/examples/hello.elf loaded
+        </pre>
+
+        <p>The program can be executed via the "run" command. Because GRMON was started in UART debug mode, the output
+        is printed to the GRMON console:</p>
+
+        <pre>
+        grmon3> run
+        hello, world
+
+          Program exited normally
+        </pre>
+
+        <h2>Flashing to ROM</h2>
+
+        <p>Instead of having to manually load and run our program, it can also be flashed to ROM. The <a
+        href="https://www.gaisler.com/index.php/products/boot-loaders/mkprom2">MKPROM</a> utility takes any executable
+        and embeds it into a an image that takes care of system initialization, then extracts the executable to RAM and
+        runs it. It is basically a tool that adds your program to a bootloader. MKPROM2 can be downloaded from
+        Gaisler's download page.</p>
+
+        <p>MKPROM2 <b>must</b> be installed in <i>/opt</i>. There are some hard-coded paths in the utility that look
+        for things there. A symlink in <i>/opt</i> that points to the extracted archive works.</p>
+
+        <p>The MKPROM2 utility needs to know a few things of the board that it will be compiling for, in particular the
+        frequency it runs at and the baudrate of the UART. Both can be extracted via GRMON:</p>
+
+        <pre>
+        $ grmon -digilent
+        ...
+        grmon3> info mkprom2
+          Mkprom2 switches:
+          -leon3 -freq 83 -baud 38425
+        </pre>
+
+        <p>The reported frequency should (and it does) match the frequency that was specified when the FPGA bitstream
+        was built. The baudrate is estimated and the value reported here is not a standard baudrate. We need to use the
+        nearest standard rate, which is 38400.</p>
+
+        <p>The same examples folder used before has an <i>mkprom-hello</i> folder with a Makefile and a C file that we
+        will be using. All commands in this section must be executed in this folder.</p>
+
+        <p>The example LEON3 design for the Arty A7 does not have a floating point unit (not available in the GPL
+        version of GRLIB) and has single vector trapping model enabled. Combined with the parameters reported by GRMON,
+        the compilation command for the MKPROM example is:</p>
+
+        <pre>
+        $ make CFLAGS="-mcpu=leon3 -msoft-float -qsvt" MKPROMOPT="-leon3 -msoft-float -qsvt -freq 83 -baud 38400"
+        </pre>
+
+        <p>The flags to MKPROM ("MKPROMOPT") must match those for compilation ("CFLAGS") of the executable itself!</p>
+
+        <p>The resulting executable has an entry point at 0x0, as can be observed via obj-dump:</p>
+
+        <pre>
+        $ sparc-gaisler-elf-objdump -x hello.prom
+
+        hello.prom:     file format elf32-sparc
+        hello.prom
+        architecture: sparc, flags 0x00000012:
+        EXEC_P, HAS_SYMS
+        start address 0x00000000
+
+        Program Header:
+            LOAD off    0x00000060 vaddr 0x00000000 paddr 0x00000000 align 2**5
+                 filesz 0x0000b940 memsz 0x0000b940 flags rwx
+
+        Sections:
+        Idx Name          Size      VMA       LMA       File off  Algn
+          0 .text         0000b940  00000000  00000000  00000060  2**5
+        ...
+        </pre>
+
+        <p>In the README inside the design folder for the Digilent Arty-A7
+        (<i>designs/leon3-digilent-arty-a7/README.txt</i>) there is however a very important message:</p>
+
+        <pre>
+        Typically the lower part of the SPI flash device will hold the
+        configuration bitstream for the FPGA. The SPIMCTRL core is configured
+        with an offset value that will be added to the incoming AHB address
+        before the address is propagated to the SPI flash device. The
+        default offset is 0x00400000 (this value is set via xconfig and the
+        constant is called CFG_SPIMCTRL_OFFSET). When the processor starts
+        after power-up it will read address 0x0, this will be translated by
+        SPIMCTRL to 0x00400000.
+
+        SPIMCTRL can only add this offset to accesses made via the core's
+        memory area. For accesses made via the register interface the offset
+        must be taken into account. This means that if we want to program
+        the Flash with an application which is linked to address 0x0 (our
+        typical bootloader) then we need to add the offset 0x00400000 before
+        programming the file with GRMON. We load the Flash with our application
+        starting at 0x00400000 and SPIMCTRL will then translate accesses from
+        AMBA address 0x0 + n to Flash address 0x00400000 + n.
+        </pre>
+
+        <p>You can verify this offset in the configuration code for the board support:</p>
+
+        <pre>
+        $ grep SPIMCTRL_OFFSET leon3-digilent-arty-a7/config.vhd
+          constant CFG_SPIMCTRL_OFFSET : integer := 16#400000#;
+        </pre>
+
+        <p>To add the offset, we need to modify the Load Memory Address (LMA) of our binary. This can be easily done
+        with the following command:</p>
+
+        <pre>
+        $ sparc-gaisler-elf-objcopy --change-section-lma *+0x400000 hello.prom hello.spim
+        </pre>
+
+        <p>I changed the extension from .prom to .spim for clarity. Verify that the LMA address has changed:</p>
+
+        <pre>
+        $ sparc-gaisler-elf-objdump -x hello.spim
+
+        hello.spim:     file format elf32-sparc
+        hello.spim
+        architecture: sparc, flags 0x00000012:
+        EXEC_P, HAS_SYMS
+        start address 0x00000000
+
+        Program Header:
+            LOAD off    0x00000060 vaddr 0x00000000 paddr 0x00400000 align 2**5
+                 filesz 0x0000b940 memsz 0x0000b940 flags rwx
+
+        Sections:
+        Idx Name          Size      VMA       LMA       File off  Algn
+          0 .text         0000b940  00000000  00400000  00000060  2**5
+        ...
+        </pre>
+
+        <p>To flash the binary to ROM, start GRMON and let it detect the flash memory module before proceeding:</p>
+
+        <pre>
+        $ grmon -digilent -freq 83
+        ...
+        grmon3> spim flash detect
+          Got manufacturer ID 0x01 and device ID 0x2018
+          Detected device: Cypress S25FL128S
+        </pre>
+
+        <p>The detection step is necessary and cannot be skipped. Now load the offset binary to flash; it will be
+        loaded at 0x40000:</p>
+
+        <pre>
+        grmon3> spim flash load hello.spim
+                    400000 .text             46.3kB /  46.3kB   [===============>] 100%
+          Total size: 46.30kB (820.42bit/s)
+          Entry point 0x00000000
+          Image /path/to/examples/mkprom-hello/hello.spim loaded
+        </pre>
+
+        <p>To verify that it was successful, one could run the verify command, but we can also just have a quick look
+        at the first four instructions (the address is the address that the processor sees, not the physical
+        address!):</p>
+
+        <pre>
+        grmon3> disassemble 0 4
+               0x00000000: a7580000  mov  %tbr, %l3
+               0x00000004: a1480000  mov  %psr, %l0
+               0x00000008: a60ceff0  and  %l3, 0xff0, %l3
+               0x0000000c: a734e004  srl  %l3, 0x4, %l3
+        </pre>
+
+        <p>Compare it with the binary we just built:</p>
+
+        <pre>
+        $ sparc-gaisler-elf-objdump -D hello.prom | head -n 11
+
+        hello.prom:     file format elf32-sparc
+
+
+        Disassembly of section .text:
+
+        00000000 &lt;_start_svt_real&gt;:
+               0:	a7 58 00 00   rd  %tbr, %l3
+               4:	a1 48 00 00   rd  %psr, %l0
+               8:	a6 0c ef f0   and  %l3, 0xff0, %l3
+               c:	a7 34 e0 04   srl  %l3, 4, %l3
+        </pre>
+
+        <p>Note: ROM must be erased before writing. Use the SPIM "flash erase" command to erase memory, but be careful:
+        without arguments it erases the entire ROM, including the FPGA bitstream!</p>
+
+        <p>To run the program, open a second terminal and connect it to the UART:</p>
+
+        <pre>
+        $ screen /dev/ttyUSB1 38400
+        </pre>
+
+        <p>In the first terminal, in GRMON, instruct the processor run from address 0:</p>
+
+        <pre>
+        grmon3> run 0
+          Program exited normally
+        </pre>
+
+        <p>On the second terminal, you should see something like this:</p>
+
+        <pre>
+          MKPROM2 boot loader v2.0.67
+          Copyright Cobham Gaisler AB - all rights reserved
+
+          system clock   : 83.0 MHz
+          baud rate      : 38425 baud
+          prom           : 512 K, (15/15) ws (r/w)
+          sram           : 2048 K, 1 bank(s), 3/3 ws (r/w)
+
+          decompressing .text to 0x40000000
+          decompressing .rodata to 0x4000f120
+          decompressing .data to 0x4000f930
+
+          starting hello.elf
+
+        --- EXAMPLE BEGIN ---
+
+        Hello World!
+
+        tick 1
+        tick 2
+        tick 3
+        tick 4
+        tick 5
+        tick 6
+        tick 7
+        tick 8
+        tick 9
+        tick 10
+
+        --- EXAMPLE END ---
+        </pre>
+
+        <p>The executable will be run every time the board is powered on, immediately after flash programming. You can
+        verify this by attaching a screen session to the serial device and press the reset button on the board. Note
+        that without GRMON attached, you’ll see two ttyUSBx devices in <i>/dev</i>: the first is the JTAG bridge, the
+        second is the UART.</p>
+
+        <pre>
+        $ screen /dev/tty.usbserial-210319B0C2D81 38400
+        </pre>
+
+        <hr>
+
+        <p><a href="../index.html">Home</a> | <i>Last update: 2021-05-23</i></p>
+    </body>
+</html>

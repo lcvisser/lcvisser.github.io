@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Switch/button/LED demo for Arty-A7 using AXI</title>
+    </head>
+    <body>
+        <h1>Switch/button/LED demo for Arty-A7 using AXI</h1>
+
+        <p>Digilent has on their website a small <a
+        href="https://digilent.com/reference/learn/programmable-logic/tutorials/arty-programming-guide/start">programming
+        tutorial</a> for the <a href="https://digilent.com/reference/programmable-logic/arty-a7/start">Arty-A7</a>. It
+        is a very simple demo in which the switches and push buttons are OR'ed to drive the LEDs. The implementation is
+        just a few lines of Verilog:</p>
+
+        <pre>
+        module sw_btn_led(
+            input [3:0]sw,
+            input [3:0]btn,
+            output [3:0]led
+            );
+
+            assign led = sw | btn;
+
+        endmodule
+        </pre>
+
+        <p>The goal here is to achieve the same with Vivado block designs from scratch.</p>
+
+        <h2>New project setup</h2>
+
+        <p>After downloading and installing the board support files for the Arty-A7, create a new project in Vivado
+        with the Arty-A7 as target platform. Add a new block design to the project. Under the "Board" tab, you'll find
+        a list of all the connections that the boards supports:</p>
+
+        <img alt="Board supported connections" src="images/bd-board-support.png">
+
+        <p>Dragging for example the "4 Push Buttons" onto the block diagram, will result into this:</p>
+
+        <img alt="Buttons with GPIO" src="images/bd-buttons.png">
+
+        <p>Vivado has automatically added (or prompts you to add, depending on your settings) an "AXI GPIO" block. This
+        is because Digilent has specified in their board support file that this peripheral is preferably used with a
+        "AXI GPIO" block. This is defined in the <i>board.xml</i> file in the board support package:</p>
+
+        <pre>
+        &lt;interface mode="master" name="push_buttons_4bits" type="xilinx.com:interface:gpio_rtl:1.0" of_component="push_buttons_4bits" preset_proc="push_buttons_4bits_preset"&gt;
+          &lt;description&gt;4 Push Buttons&lt;/description&gt;
+          &lt;preferred_ips&gt;
+            &lt;preferred_ip vendor="xilinx.com" library="ip" name="axi_gpio" order="0"/&gt;
+          &lt;/preferred_ips&gt;
+          &lt;port_maps&gt;
+            &lt;port_map logical_port="TRI_I" physical_port="push_buttons_4bits_tri_i" dir="in" left="3" right="0"&gt;
+              &lt;pin_maps&gt;
+                &lt;pin_map port_index="0" component_pin="push_buttons_4bits_tri_i_0"/&gt;
+                &lt;pin_map port_index="1" component_pin="push_buttons_4bits_tri_i_1"/&gt;
+                &lt;pin_map port_index="2" component_pin="push_buttons_4bits_tri_i_2"/&gt;
+                &lt;pin_map port_index="3" component_pin="push_buttons_4bits_tri_i_3"/&gt;
+              &lt;/pin_maps&gt;
+            &lt;/port_map&gt;
+          &lt;/port_maps&gt;
+        &lt;/interface&gt;
+        </pre>
+
+        <p>The <a
+        href="https://www.xilinx.com/content/dam/xilinx/support/documentation/ip_documentation/axi_gpio/v2_0/pg144-axi-gpio.pdf">AXI
+        GPIO block</a> is not very complicated, and the <a
+        href="https://developer.arm.com/documentation/ihi0022/e/AMBA-AXI3-and-AXI4-Protocol-Specification">AXI
+        protocol</a> is also manageable for the simple read/write operations that we are going to use for AXI GPIO
+        (streaming and burst data transfers with multiple AXI master and slave modules on the bus quickly gets really
+        complicated, as <a href="https://zipcpu.com/blog/2020/03/23/wbm2axisp.html">this blog post</a> explains very
+        well).</p>
+
+        <h2>A simple AXI master</h2>
+
+        <p>First we create a simple AXI master in VHDL. This module will read the states of the buttons and switches
+        and drive the LEDs accordingly. In the AXI specification you can find which inputs and ouputs are required for
+        the "Lite" version of the AXI protocol, which supports only simple read and write operations. Here is the
+        entity specification with all the required inputs and outputs specified:</p>
+
+        <pre>
+        entity axi_led_ctrl is
+            Port (
+                    -- General
+                    m_axi_aclk      : in std_logic;
+                    m_axi_aresetn   : in std_logic;
+
+                    -- Write address channel
+                    m_axi_awready   : in std_logic;
+                    m_axi_awvalid   : out std_logic;
+                    m_axi_awaddr    : out std_logic_vector(31 downto 0);
+                    m_axi_awprot    : out std_logic_vector(2 downto 0);
+
+                    -- Write data channel
+                    m_axi_wready    : in std_logic;
+                    m_axi_wvalid    : out std_logic;
+                    m_axi_wdata     : out std_logic_vector(31 downto 0);
+
+                    -- Write response channel
+                    m_axi_bvalid    : in std_logic;
+                    m_axi_bready    : out std_logic;
+
+                    -- Read address channel
+                    m_axi_arready   : in std_logic;
+                    m_axi_arvalid   : out std_logic;
+                    m_axi_araddr    : out std_logic_vector(31 downto 0);
+                    m_axi_arprot    : out std_logic_vector(2 downto 0);
+
+                    -- Read data channel
+                    m_axi_rready    : out std_logic;
+                    m_axi_rvalid    : in std_logic;
+                    m_axi_rdata     : in std_logic_vector(31 downto 0)
+                 );
+        end axi_led_ctrl;
+        </pre>
+
+        <p>Add a new VHDL source file to the project. You can specify the inputs and outputs in the wizard, or just
+        copy the above into an empty source file. In this first version, I'm just going to have the module turn some
+        LEDs on continuously. Later we'll add something more advanced. Add this below the interface
+        specification in the same file:</p>
+
+        <pre>
+        architecture Behavioral of axi_led_ctrl is
+            signal clk  : std_logic;
+            signal rstn : std_logic;
+        begin
+
+            -- Map general signals
+            clk &lt;= m_axi_aclk;
+            rstn &lt;= m_axi_aresetn;
+
+            -- Default protection flags
+            m_axi_awprot &lt;= "000";
+            m_axi_arprot &lt;= "000";
+
+            process(clk, rstn) is
+            begin
+                if rising_edge(clk) then
+                    if rstn = '0' then
+                        m_axi_awvalid &lt;= '0';
+                        m_axi_wvalid &lt;= '0';
+                        m_axi_arvalid &lt;= '0';
+                    else
+                        -- Write to LEDs
+                        m_axi_awvalid &lt;= '1';
+                        m_axi_awaddr &lt;= x"40010000";  -- address of GPIO1
+                        m_axi_wvalid &lt;= '1';
+                        m_axi_wdata &lt;= x"0000000B";  -- LED3, 1 and 0 on
+
+                        -- No reading
+                        m_axi_arvalid &lt;= '0';
+                    end if;
+                end if;
+            end process;
+
+        end Behavioral;
+        </pre>
+
+        <p>Note the address of GPIO1; we will come back to that later.</p>
+
+        <h2>Block design</h2>
+
+        <p>Create a new block diagram and drag the "4 Push Buttons", "4 Switches" and "4 LEDs" onto the canvas, as well
+        as our master controller. Vivado will help with auto routing and connections, and will (should) ask to add the
+        following components (your mileage may vary, since a lot seems to depend on the order in which you add things
+        to the block design):</p>
+
+        <ul>
+            <li>AXI interconnect</li>
+            <li>Clocking wizard</li>
+            <li>Processor System Reset</li>
+        </ul>
+
+        <p>It should also connect to the reset button and the board's <i>sys_clock</i>. The reset button is active low,
+        so Vivado will also add an inverter to connect the reset to the clocking wizard, which has an active high
+        reset. In the end, the block design should look like this (click for larger):</p>
+
+        <a href="images/bd-sw-btn-led.png"><img alt="Block design complete" src="images/bd-sw-btn-led-small.png"></a>
+
+        <p>Open the address editor to check which addresses Vivado assigned to which GPIO block. As you can see, I have
+        both the push buttons and the switches on <i>axi_gpio_0</i> and the LEDs on <i>axi_gpio_1</i>. Here is my
+        address map:</p>
+
+        <img alt="Address map" src="images/bd-sw-btn-led-addresses.png">
+
+        <p>Note that the LEDs are at 0x40010000, which corresponds to the address in the AXI master.</p>
+
+        <h2>Synthesize the simple design</h2>
+
+        <p>You cannot synthesize the block design directly (<a
+        href="https://www.centennialsoftwaresolutions.com/post/why-do-i-need-to-run-create-hdl-wrapper">explanation</a>).
+        Create a HDL wrapper first and then follow the design flow: synthesis, implementation and bitstream generation.
+        Finally, program the device and see LED3, LED1 and LED0 come on.</p>
+
+        <h2>Reading the switches and buttons</h2>
+
+        <p>In order to read the switches and buttons, we need to actually implement some logic to get the data over the
+        AXI bus. The protocol is well documented (<a
+        href="https://developer.arm.com/documentation/ihi0022/e/Preface?lang=en">specification</a>) and the principle
+        is straightforward:</p>
+
+        <ul>
+            <li>There are five channels: write address, write data, write response, read address and read data.</li>
+            <li>All five channels use the same <a
+            href="https://developer.arm.com/documentation/ihi0022/e/AMBA-AXI3-and-AXI4-Protocol-Specification/Single-Interface-Requirements/Basic-read-and-write-transactions/Handshake-process?lang=en">handshake
+            protocol</a>, which boils down to: the originator asserts VALID when the data is valid, and the receiver
+            asserts READY to indicate the completion of the transfer.</li>
+        </ul>
+
+        <p>To write data somewhere, the sequence of events is roughly as follows:</p>
+
+        <ol>
+            <li>The AXI master first uses the write address channel to indicate where the data should go to.</li>
+            <li>The data is put on the write data channel</li>
+            <li>After the data transfer is complete, the AXI slave responds with the result (success, failure, etc.) on
+            the write response channel.</li>
+        </ol>
+
+        <p>For reading data from somewhere, it is more or less similar, except that there is no read response:</p>
+
+        <ol>
+            <li>The AXI master uses the read address channel to indicate where to read from.</li>
+            <li>The slave puts the data on the bus and waits for the master to complete the transaction.</li>
+        </ol>
+
+        <p>There is a good explanation written down <a
+        href="https://zipcpu.com/blog/2021/08/28/axi-rules.html">here</a>.</p>
+
+        <h3>State machine</h3>
+
+        <p>I use a state machine to correctly implement the AXI protocol and the transitions between the various
+        phases. The state machine has seven states:</p>
+
+        <ol>
+            <li><i>Idle</i>: do nothing</li>
+            <li><i>ReadSwitchAddr</i>: put the address of the switches on the read address channel</li>
+            <li><i>ReadSwitchData</i>: read the switch states via the read data channel</li>
+            <li><i>ReadButtonAddr</i>: put the address of the push buttons on the read address channel</li>
+            <li><i>ReadButtonData</i>: read the button states via the read data channel</li>
+            <li><i>WriteLed</i>: write the desired LED state on the write data channel</li>
+            <li><i>NoOp</i>: placeholder that I will explain later</li>
+        </ol>
+
+        <pre>
+        type state_t is (Idle, ReadSwitchAddr, ReadSwitchData, ReadButtonAddr, ReadButtonData, WriteLed, NoOp);
+        </pre>
+
+        <p>I didn't bother to make separate states for the write address channel and the write response, since I'm
+        always writing to the same address. I didn't handle the write response in a separate state either, since if
+        writing to the LEDs failed I had no other way to signal the error anyway.</p>
+
+        <h3>Handshakes</h3>
+
+        <p>Since all channels use the same handshake protocol, it is a good idea to make a procedure for it:</p>
+
+        <pre>
+        procedure waitXferComplete(
+            signal valid : out std_logic;
+            signal ack : in std_logic;
+            variable complete : inout boolean;
+            signal state : inout state_t;
+            constant next_state : in state_t
+        ) is
+        begin
+            if complete = false then
+                valid &lt;= '1';
+                state &lt;= state;
+                if ack = '1' then
+                    valid &lt;= '0';
+                    complete := true;
+                    if next_state /= NoOp then
+                        state &lt;= next_state;
+                    end if;
+                end if;
+            else
+                valid &lt;= '0';
+                state &lt;= state;
+            end if;
+        end procedure;
+        </pre>
+
+        <p>The <i>ack</i> signal is defined as  the logical and of VALID and READY. As soon as the transfer is
+        complete, it deasserts the valid signal and transitions to the next state. I pass in the state of the state
+        machine that should be next once the transfer is completed. I abuse the `NoOp` state so I can run multiple
+        instances of this procedure in parallel with only one triggering a state transition (I do this in the
+        <i>WriteLed</i> state). Here is a condensed version of how it is used:</p>
+
+        <pre>
+        arack &lt;= arvalid and M_AXI_ARREADY;
+        -- ...
+        process(clk, resetn, ..., arack, ...) is
+            -- ...
+                variable arcomplete : boolean := false;
+            -- ...
+            begin
+                if rising_edge(clk) then
+                    case state is
+                        -- ...
+                        when ReadSwitchAddr =&gt;
+                            M_AXI_ARADDR &lt;= x"40010000";
+                            waitXferComplete(arvalid, arack, arcomplete, state, ReadSwitchData);
+        -- ...
+        end process;
+        </pre>
+
+        <p>Note that in the read data state, the ready signal takes the place of the valid signal, as the roles of
+        master and slave are reversed for the handshake.</p>
+
+        <h3>Combinatorial logic</h3>
+
+        <p>I choose to keep the logic of mapping switch and button states to LED states outside the process:</p>
+
+        <pre>
+        M_AXI_WDATA &lt;= switch_state or button_state;
+        </pre>
+
+        <p>The registers with the switch and button states are read in a process separate from the state machine:</p>
+
+        <pre>
+        process(clk, state, rack, M_AXI_RDATA) is
+        begin
+            if rising_edge(clk) then
+                if rack = '1' and state = ReadSwitchData then
+                    switch_state &lt;= M_AXI_RDATA;
+                elsif rack = '1' and state = ReadButtonData then
+                    button_state &lt;= M_AXI_RDATA;
+                end if;
+            end if;
+        end process;
+        </pre>
+
+        <h3>Putting it all together</h3>
+
+        <p><a href="https://gist.github.com/lcvisser/7d613254ba7418e89f50883732e08959">Here</a> is the entire VHDL code
+        for the updated AXI master. Adding the <a
+        href="https://www.xilinx.com/products/intellectual-property/ila.html#overview">Xilinx Integrated Logic
+        Analyzer</a> to the block diagram allows to trace signals on the board. I put a trigger on a speciif value
+        (0xd) of the write data channel so that the trace can be triggered by a button press (click for larger):</p>
+
+        <a href="images/sw-btn-led-ila.png"><img alt="ILA trace" src="images/sw-btn-led-ila-small.png"></a>
+
+        <p>The trace shows an entire cycle of the state machine. On the left, we see two read cycles: one for the
+        switches at 0x40010000 and one for the buttons at 0x40010008. Because the two registers with the switch and
+        button states are wired directly onto the write data signal, this is where the ILA triggers. On the right of
+        the trigger we see from top to bottom: the write address transaction, the write data transaction and the write
+        response transaction (note how the signals AWVALID and WVALID and BREADY are kept high due to my aforementioned
+        laziness for not implementing separate states). On the far right we see the <i>Idle</i> state and the beginning
+        of the next read address state.</p>
+
+        <hr>
+
+        <p><a href="../index.html">Home</a> | <i>Last update: 2021-12-12</i></p>
+    </body>
+</html>
