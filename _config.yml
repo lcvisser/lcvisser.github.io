@@ -1,14 +1,25 @@
+# Global configuration
 title: Ludo's page
-description: >-
-  Various experiments and solutions that I find interesting to share and are
-  hopefully interesting or useful to others.
+tagline: Hopefully interesting things.
 baseurl: ""
 url: "https://lcvisser.github.io"
-github_username: lcvisser
+author:
+  name: Ludo Visser
+  url: "https://www.github.com/lcvisser"
+tags_path: /by-tag/
+categories_path: /by-category/
+
+# Defaults
+defaults:
+  - scope:
+      path: ""
+      type: posts
+    values:
+      author: Ludo Visser
+      comments: false
 
 # Build settings
-theme: minima
+remote_theme: "zivhub/monophase"
 plugins:
   - jekyll-feed
   - jekyll-seo-tag
-
