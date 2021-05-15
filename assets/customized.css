@@ -1,0 +1,7 @@
+.nav-list a:hover, .nav-list a:focus {
+    text-decoration: underline;
+}
+
+.nav-list a.current {
+    text-decoration: underline;
+}
