@@ -1,6 +1,10 @@
 # Global configuration
 title: Ludo's page
 tagline: Hopefully interesting things.
+description: >-
+  A page with hopefully interesting nuggets of information and experiences that come along in my professional and
+  non-professional life. Topics include, but are not limited to: C, Python, various assembly variants, toolchains,
+  emulators, embedded software, ARM, SPARC, x86. Expect the occasional sidetrack into the space domain.
 baseurl: ""
 url: "https://lcvisser.github.io"
 author:
@@ -21,5 +25,4 @@ defaults:
 # Build settings
 remote_theme: "zivhub/monophase"
 plugins:
-  - jekyll-feed
   - jekyll-seo-tag

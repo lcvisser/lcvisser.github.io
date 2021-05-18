@@ -5,7 +5,4 @@ tag: "hello world"
 category: miscellaneous
 ---
 
-# Hello, world!
-
 Welcome.
-
