@@ -5,3 +5,18 @@
 .nav-list a.current {
     text-decoration: underline;
 }
+
+.message-info {
+    color: #000000;
+    background-color: #9fd69f;
+}
+
+.message-warning {
+    color: #000000;
+    background-color: #ecba6f;
+}
+
+.message-danger {
+    color: #000000;
+    background-color: #e78383;
+}
