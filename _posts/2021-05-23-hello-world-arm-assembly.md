@@ -133,9 +133,9 @@ message:
 ```
 
 {:.message-info}
-if this was a real ARM board, we would have to add some code to actually initialize the UART, setting the
-*baud rate, etc. However, the "virt" board doesn't seem to really care about that: you can just write to the data
-*register and it will be printed to `stdout` of your host operating system.
+If this was a real ARM board, we would have to add some code to actually initialize the UART, set the baudrate, etc.
+However, the "virt" board doesn't seem to really care about that: you can just write to the data register and it will
+be printed to `stdout` of your host operating system.
 
 
 ## Compiling and running
