@@ -10,7 +10,7 @@ Since Mac OS Big Sur, Mac OS is not longer Mac OS X, but Mac OS 11 (Mac OS XI?):
 The major version increment from 10 to 11 caused (or was foreseen to cause) all kinds of issues, so Apple decided to
 build in a compatibility feature that makes Big Sur report as version 10.16.x instead of 11.x. In the shell you can
 control this behaviour via an environment variable `SYSTEM_VERSION_COMPAT`: setting it to `1` and Big Sur reports
-itself as 10.16.x; setting it to `0`` or undefined and it reports `11.x`.
+itself as 10.16.x; setting it to `0` or undefined and it reports `11.x`.
 
 See [this excellent post](https://eclecticlight.co/2020/08/13/macos-version-numbering-isnt-so-simple/) for details and
 background information.
