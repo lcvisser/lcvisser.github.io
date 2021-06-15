@@ -18,7 +18,7 @@ background information.
 If you use [MacPorts](https://www.macports.org), you'll occassionally run into this issue when some port fails to
 install with an error along the lines of:
 
-> "<portname> requires macOS 11.0.0 or later, you have macOS 10.16.0."
+> "PORTNAME requires macOS 11.0.0 or later, you have macOS 10.16.0."
 
 Simply exporting `SYSTEM_VERSION_COMPAT` will not help, because a) you typicall install ports as root user and b) under
 the hood MacPorts is spawning all kinds of processes that you don't have control over.
