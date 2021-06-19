@@ -12,6 +12,7 @@ author:
   url: "https://www.github.com/lcvisser"
 tags_path: /by-tag/
 categories_path: /by-category/
+countapi: lcvisser.github.io
 
 # Defaults
 defaults:
@@ -23,6 +24,6 @@ defaults:
       comments: false
 
 # Build settings
-remote_theme: "zivhub/monophase"
+remote_theme: "lcvisser/monophase"
 plugins:
   - jekyll-seo-tag
