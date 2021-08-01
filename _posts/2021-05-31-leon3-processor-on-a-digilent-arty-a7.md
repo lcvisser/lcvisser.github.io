@@ -80,7 +80,7 @@ must be run as root user.
 
 After installation, plug in the board and run:
 
-```
+```sh
 $ dadutil enum
 Found 1 device(s)
 
@@ -107,7 +107,7 @@ used version 2020.2 for writing this article.
 Before running the installer, set the `LC_ALL` and `LANG` environment variables (put this also in `.bashrc` or
 similar):
 
-```
+```sh
 export LC_ALL=C.UTF-8
 export LANG=C.UTF-8
 ```
@@ -123,7 +123,7 @@ You can install Vivado in any location. You don't need root access to run the ma
 install it in a location that is read-only for normal users, to avoid accidentally breaking things. Vivado comes with a
 small bash script to set environment variables (such as adding `vivado` to `PATH`); you need to source it:
 
-```
+```sh
 $ . /path/to/Vivado/2020.2/settings64.sh"
 ```
 
@@ -131,6 +131,7 @@ After finishing the main installer, you need to also install the Xilinx cable dr
 will not work!):
 
 ```
+$ sudo su
 # /path/to/Vivado/2020.2/data/xicom/cable_drivers/lin64/install_script/install_drivers/install_drivers
 ```
 
@@ -150,6 +151,7 @@ You will also need GRMON, their debug tool. It too can be [downloaded from their
 website](https://www.gaisler.com/index.php/downloads/debug-tools). It is free for personal use. Extract the archive and
 add the `bin64` and `lib64` paths to your `PATH` and `LD_LIBRARY_PATH` variables.
 
+
 ## Building the LEON3 example design
 
 GRLIB comes with a designs for a large number of boards. They reside in the `designs` directory. To get started, copy
@@ -157,7 +159,7 @@ the entire `leon3-digilent-arty-a7` directory to a workspace directory (careful:
 directory under `boards`!). In the top-level Makefile, modify the `GRLIB` variable to point to the root of the
 extracted GRLIB archive and then run:
 
-```
+```sh
 $ make scripts
 ```
 
@@ -176,17 +178,19 @@ run you can comment the line in the TCL script out again.
 
 Now, start the build and synthesis process:
 
-```
+```sh
 $ make vivado
 ```
 
 This takes about 15 minutes on a reasonably up to date machine. Alternatively, run `make vivado-launch` for an
-interactive session (in that case, do **not** uncomment the line in the TCL script, as it will immediately try to build the MIG core on startup; instead, do the build from the context menu (look for "Upgrade IP...")).
+interactive session (in that case, do **not** uncomment the line in the TCL script, as it will immediately try to build
+the MIG core on startup; instead, do the build from the context menu (look for "Upgrade IP...")).
 
 {:.message-warning}
 Vivado requires 3.5 GB of RAM with the Arty-A7, more than the 3 GB that Xilinx
 [reports](https://www.xilinx.com/products/design-tools/vivado/memory.html). My headless CentOS virtual machine needs 5
 GB of RAM to synthesize the default design. If you run from the Vivado GUI, you'll need more.
+
 
 ## Flashing the bitstream
 
@@ -209,7 +213,7 @@ should light up.
 Now, use GRMON to connect to the core (the `-freq` flag is should not be necessary, but sometimes GRMON detects the
 frequency incorrectly):
 
-```
+```sh
 $ grmon -digilent -freq 83
   GRMON debug monitor v3.2.11.1 64-bit eval version
 
