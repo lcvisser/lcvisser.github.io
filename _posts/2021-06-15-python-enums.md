@@ -174,7 +174,7 @@ In file included from quirk.c:2:
 3 errors generated.
 ```
 
-There are two diffierent errors:
+There are two different errors:
  - `FOO` and `BAR` are defined twice in an enumeration.
  - `enum T` is defined twice.
 
