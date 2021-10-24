@@ -170,6 +170,7 @@ design):
  - AXI interconnect
  - Clocking wizard
  - Processor System Reset
+
 It should also connect to the reset button and the board's `sys_clock`. The reset button is active low, so Vivado will
 also add an inverter to connect the reset to the clocking wizard, which has an active high reset.
 
