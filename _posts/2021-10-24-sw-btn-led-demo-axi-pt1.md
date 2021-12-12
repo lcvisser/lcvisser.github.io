@@ -66,6 +66,7 @@ with multiple AXI master and slave modules on the bus quickly gets really compli
 post](https://zipcpu.com/blog/2020/03/23/wbm2axisp.html) explains much better than I can). So, let's see if we can redo
 the button/switch/led demo with AXI GPIO.
 
+
 ## Step 1: A simple AXI master
 
 First we create a simple AXI master in VHDL. This module will read the states of the buttons and switches and drive
@@ -176,7 +177,7 @@ also add an inverter to connect the reset to the clocking wizard, which has an a
 
 In the end, the block design should look like this:
 
-![Block design complete](/images/bd-sw-btn-led1.png)
+[![Block design complete](/images/bd-sw-btn-led1.png)](/images/bd-sw-btn-led1.png)
 
 Open the address editor to check which addresses Vivado assigned to which GPIO block. As you can see, I have both the
 push buttons and the switches on `axi_gpio_0` and the LEDs on `axi_gpio_1`. Here is my address map:
