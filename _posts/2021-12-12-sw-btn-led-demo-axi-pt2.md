@@ -7,10 +7,10 @@ category: FPGA
 
 In a [previous post]({% post_url 2021-10-24-sw-btn-led-demo-axi-pt1 %}) I optimistically set out to reproduce the
 [switch/button/LED demo from
-Digilent](https://digilent.com/reference/learn/programmable-logic/tutorials/arty-programming-guide/start)), but using
+Digilent](https://digilent.com/reference/learn/programmable-logic/tutorials/arty-programming-guide/start), but using
 AXI. I quickly had some LEDs lighting up, but reading out the push buttons and the switches proved to be a bit more
 difficult than I anticipated. Probably because I'm not using VDHL and AXI on a daily (or any) basis, so this was a lot
-of discovery. This things I will outline below are maybe obvious to the experts, but as it was not obvious to me, I'm
+of learning. The things I will outline below are maybe obvious to the experts, but as it was not obvious to me, I'm
 imagining it is not obvious to other beginners either, so hopefully this is useful.
 
 
@@ -19,7 +19,7 @@ imagining it is not obvious to other beginners either, so hopefully this is usef
 ### AXI is hard
 
 Actually, it is not that hard in theory. The protocol is pretty well documented ([the specification can be found
-here](https://developer.arm.com/documentation/ihi0022/e/Preface?lang=en)) and the principly is straightforward:
+here](https://developer.arm.com/documentation/ihi0022/e/Preface?lang=en)) and the principle is straightforward:
 
 - There are five channels: write address, write data, write response, read address and read data.
 - All five channels use the same [handshake protocol](https://developer.arm.com/documentation/ihi0022/e/AMBA-AXI3-and-AXI4-Protocol-Specification/Single-Interface-Requirements/Basic-read-and-write-transactions/Handshake-process?lang=en),
@@ -38,9 +38,9 @@ For reading data from somewhere, it is more or less similar, except that there i
 1. The AXI master uses the read address channel to indicate where to read from.
 2. The slave puts the data on the bus and waits for the master to complete the transaction.
 
-Now, the difficulty (at least for me as unexperience hobbyist), is that all kinds of things can happen at the same time
-if your not careful. ARM explains [in detail](https://developer.arm.com/documentation/ihi0022/e/AMBA-AXI3-and-AXI4-Protocol-Specification/Single-Interface-Requirements/Relationships-between-the-channels/Dependencies-between-channel-handshake-signals?lang=en)
-the depdencies between the various handshake signals, but then it is still easy to mess things up. Fortunately,
+Now, the difficulty (at least for me as unexperienced hobbyist) is that all kinds of things can happen at the same
+time if your not careful. ARM explains [in detail](https://developer.arm.com/documentation/ihi0022/e/AMBA-AXI3-and-AXI4-Protocol-Specification/Single-Interface-Requirements/Relationships-between-the-channels/Dependencies-between-channel-handshake-signals?lang=en)
+the dependencies between the various handshake signals, but then it is still easy to mess things up. Fortunately,
 someone way smarter than me [wrote an excellent article on AXI handshaking rules](https://zipcpu.com/blog/2021/08/28/axi-rules.html)
 and some basic principles that one should obey in order not to mess things up. Recommended reading.
 
@@ -51,7 +51,7 @@ Vivado has a nice simulation suite built in, and you can make nice test benches 
 work as intended. Of course, this requires that you apply the correct stimuli at the correct times. Only when I found
 out about [Xilinx Integrated Logic Analyzer](https://www.xilinx.com/products/intellectual-property/ila.html#overview) I
 learned that my simulation did not correspond with what was happening in reality, explaining why my design worked fine
-when I simulated it but did nothing when flashed on the board. For those of you who also are unfamiliar with ILA: it
+when I simulated it but did nothing when flashed on the board. For those of you who are also unfamiliar with ILA: it
 basically allows you to monitor signals on the board in real-time. It can hook up directly to the AXI bus, or to
 individual signals. You need to specify useful triggers to make sure that you see what you need to see, but once you
 get the hang of it, it is extremely useful.
@@ -94,8 +94,10 @@ begin
 end procedure;
 ```
 
-This tripped me up, because I initially used the first version in handling the AXI channel transfer, which resulted in
-the valid signal (`signal_out`) to be asserted one clock cycle too long, which locked up the GPIO IP. Live and learn.
+This tripped me up in implementing the AXI handshakes, because I initially used the first version in handling the AXI
+channel transfer, which resulted in the valid signal (`signal_out`) to be asserted one clock cycle too long, which
+locked up the GPIO IP. This is where the ILA came in handy, because with it I could see the write response indicating
+what I had done wronge. Live and learn.
 
 
 ## Implementation of the AXI protocol
@@ -218,12 +220,12 @@ connected to which GPIO block). I also added the ILA.
 
 I set a breakpoint in the ILA interface to trigger on a specifc value on the write data channel, corresponding to two
 switches active and one push button (`0xd`). This allowed me to trigger the ILA with the push of a button, allowing me
-to generate this trace:
+to generate this trace (click for a larger version):
 
 [![Full cycle trace ILA](/images/sw-btn-led-ila.png)](/images/sw-btn-led-ila.png)
 
 The trace shows an entire cycle of the state machine. On the left, we see two read cycles: one for the switches at
-`0x40010000` and one for the buttons at `0x40010008`. Because the two registers with the switch and button states is
+`0x40010000` and one for the buttons at `0x40010008`. Because the two registers with the switch and button states are
 wired directly onto the write data signal, this is where the ILA triggers. On the right of the trigger we see from top
 to bottom: the write address transaction, the write data transaction and the write response transaction (note how the
 signals `AWVALID` and `WVALID` and `BREADY` are kept high due to my aforementioned laziness for not implementing
